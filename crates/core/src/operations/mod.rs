@@ -198,15 +198,16 @@ pub async fn attempt_write_with_retry(
     max_retry: u32,
 ) -> DeltaResult<CommitResult> {
     let start = std::time::Instant::now();
-    let access_count_map = new_access_count_map();
-    let mut retry_cnt = 0;
+    // TODO: implement incrementing access count for each cloud storage access
+    let mut access_count_map = new_access_count_map();
 
-    while retry_cnt < max_retry {
-        /*
-         * open table stored in the Cloud Storage
-         * this will read the `_delta_log` directory and construct the state of the table
-         */
+    for retry_cnt in 0..= max_retry {
+        // open table stored in the Cloud Storage
+        // this will read the `_delta_log` directory and construct the state of the table
+        // will send request to the Cloud Storage
         let table = open_table(table_url).await?;
+
+        // try writing
         let write_res = DeltaOps(table)
             .write(batches.clone())
             .with_target_file_size(1000)
@@ -214,13 +215,21 @@ pub async fn attempt_write_with_retry(
             .into_future()
             .await;
 
-        if let Err(DeltaTableError::VersionAlreadyExists(_)) = write_res {
-            // write conflict.
-            // retry.
-            match &retry_mode {
-                RetryMode::Immediate => {}
-                RetryMode::RandomExponential(config) => {
-                    // random exponential backoff
+        // match the write result
+        // retry if necessary
+        match write_res {
+            Ok(_) => {
+                // success
+                return Ok(CommitResult::Success(SucceessCommitMetrics::new(
+                    retry_cnt,
+                    start.elapsed(),
+                    access_count_map,
+                )));
+            }
+            Err(DeltaTableError::VersionAlreadyExists(_)) => {
+                // write conflict!
+                // random exponential backoff or immediate retry (based on retry_mode)
+                if let RetryMode::RandomExponential(config) = &retry_mode {
                     let interval = get_random_exponential_backoff_interval_in_millis(
                         config.random_seed,
                         config.backoff_factor,
@@ -229,17 +238,10 @@ pub async fn attempt_write_with_retry(
                     tokio::time::sleep(tokio::time::Duration::from_millis(interval)).await;
                 }
             }
-            retry_cnt += 1;
-        } else if let Err(err) = write_res {
-            // error
-            return Err(err);
-        } else {
-            // success
-            return Ok(CommitResult::Success(SucceessCommitMetrics::new(
-                retry_cnt,
-                start.elapsed(),
-                access_count_map,
-            )));
+            Err(err) => {
+                // error
+                return Err(err);
+            }
         }
     }
 
