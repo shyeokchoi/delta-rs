@@ -7,6 +7,8 @@
 //! with a [data stream][datafusion::physical_plan::SendableRecordBatchStream],
 //! if the operation returns data as well.
 use std::collections::HashMap;
+use std::future::IntoFuture;
+use rand::Rng;
 
 use add_feature::AddTableFeatureBuilder;
 #[cfg(feature = "datafusion")]
@@ -30,6 +32,8 @@ use self::{
 use crate::errors::{DeltaResult, DeltaTableError};
 use crate::table::builder::DeltaTableBuilder;
 use crate::DeltaTable;
+use crate::open_table;
+use crate::protocol::SaveMode;
 
 pub mod add_column;
 pub mod add_feature;
@@ -70,10 +74,13 @@ pub(crate) trait Operation<State>: std::future::IntoFuture {}
 /// High level interface for executing commands against a DeltaTable
 pub struct DeltaOps(pub DeltaTable);
 
+static DEFAULT_RANDOM_SEED: u64 = 100;
+
 /// Configuration for random exponential backoff
 pub struct RetryConfig {
     /// Seed for random retry interval
-    /// It is multiplied to random value btw 0 and 1 to calculate the retry interval
+    /// It is multipled to (backoff_factor)^(retry count) to get the max interval
+    /// default: DEFAULT_RANDOM_SEED
     random_seed: u64,
     /// backoff factor which is multiplied to the interval, every time a retry is performed
     backoff_factor: u64,
@@ -91,7 +98,7 @@ impl RetryConfig {
     /// default RetryConfig
     pub fn default() -> Self {
         RetryConfig {
-            random_seed: 1,
+            random_seed: DEFAULT_RANDOM_SEED,
             backoff_factor: 2,
         }
     }
@@ -105,17 +112,141 @@ pub enum RetryMode {
     RandomExponential(RetryConfig),
 }
 
-/// Represents the metrics of a commit
-/// Measuring the number of cloud storage accesses and the latency of the commit
-pub struct CommitMetrics {
-    /// The number of cloud storage accesses made during the commit
-    pub cloud_storage_access_cnt: usize,
-    /// The time taken to commit
-    pub commit_duration: std::time::Duration,
+/// Types of cloud storage access
+#[derive(Hash, Eq, PartialEq)]
+pub enum CloudStorageAccessType {
+    ListObjects,
+    ReadObject,
 }
 
-pub async fn attempt_write_with_retry() {
-    // TODO
+pub enum CommitResult {
+    Success(SucceessCommitMetrics),
+    Fail(FailedCommitMetrics),
+}
+
+type CloudStorageAccessCountMap = HashMap<CloudStorageAccessType, u32>;
+
+/// Represents the metrics of a successful commit
+pub struct SucceessCommitMetrics {
+    /// The number of retries made during the commit
+    pub retry_cnt: u32,
+    /// The time taken to commit
+    pub commit_duration: std::time::Duration,
+    /// The number of cloud storage accesses made during the commit
+    pub cloud_storage_accesses: CloudStorageAccessCountMap,
+}
+
+impl SucceessCommitMetrics {
+    /// Create a new SucceessCommitMetrics
+    pub fn new(
+        retry_cnt: u32,
+        commit_duration: std::time::Duration,
+        cloud_storage_accesses: CloudStorageAccessCountMap,
+    ) -> Self {
+        SucceessCommitMetrics {
+            retry_cnt,
+            commit_duration,
+            cloud_storage_accesses,
+        }
+    }
+}
+
+/// Represents the metrics of a failed commit
+pub struct FailedCommitMetrics {
+    /// The time taken
+    pub commit_duration: std::time::Duration,
+    /// The number of cloud storage accesses made during the trial of commit
+    pub cloud_storage_accesses: CloudStorageAccessCountMap,
+}
+
+impl FailedCommitMetrics {
+    /// Create a new FailedCommitMetrics
+    pub fn new(
+        commit_duration: std::time::Duration,
+        cloud_storage_accesses: CloudStorageAccessCountMap,
+    ) -> Self {
+        FailedCommitMetrics {
+            commit_duration,
+            cloud_storage_accesses,
+        }
+    }
+}
+
+/// Calculate the interval for random exponential backoff
+/// Unit: millis
+fn get_random_exponential_backoff_interval_in_millis(
+    random_seed: u64,
+    base: u64, /* the base of exponential backoff */
+    exponent: u32, /* the exponent of exponential backoff */
+) -> u64 {
+    let max_backoff = random_seed * base.pow(exponent);
+    return rand::thread_rng().gen_range(0..max_backoff);
+}
+
+fn new_access_count_map() -> CloudStorageAccessCountMap {
+    let mut map = HashMap::new();
+    map.insert(CloudStorageAccessType::ListObjects, 0);
+    map.insert(CloudStorageAccessType::ReadObject, 0);
+    map
+}
+
+pub async fn attempt_write_with_retry(
+    table_url: &str,
+    batches: impl IntoIterator<Item = RecordBatch> + Clone,
+    save_mode: SaveMode,
+    retry_mode: RetryMode,
+    max_retry: u32,
+) -> DeltaResult<CommitResult> {
+    let start = std::time::Instant::now();
+    let access_count_map = new_access_count_map();
+    let mut retry_cnt = 0;
+
+    while retry_cnt < max_retry {
+        /*
+         * open table stored in the Cloud Storage
+         * this will read the `_delta_log` directory and construct the state of the table
+         */
+        let table = open_table(table_url).await?;
+        let write_res = DeltaOps(table)
+            .write(batches.clone())
+            .with_target_file_size(1000)
+            .with_save_mode(save_mode)
+            .into_future()
+            .await;
+
+        if let Err(DeltaTableError::VersionAlreadyExists(_)) = write_res {
+            // write conflict.
+            // retry.
+            match &retry_mode {
+                RetryMode::Immediate => {}
+                RetryMode::RandomExponential(config) => {
+                    // random exponential backoff
+                    let interval = get_random_exponential_backoff_interval_in_millis(
+                        config.random_seed,
+                        config.backoff_factor,
+                        retry_cnt,
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(interval)).await;
+                }
+            }
+            retry_cnt += 1;
+        } else if let Err(err) = write_res {
+            // error
+            return Err(err);
+        } else {
+            // success
+            return Ok(CommitResult::Success(SucceessCommitMetrics::new(
+                retry_cnt,
+                start.elapsed(),
+                access_count_map,
+            )));
+        }
+    }
+
+    Ok(CommitResult::Fail(FailedCommitMetrics::new(
+        start.elapsed(),
+        access_count_map,
+    )))
 }
 
 impl DeltaOps {
