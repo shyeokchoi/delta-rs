@@ -70,6 +70,54 @@ pub(crate) trait Operation<State>: std::future::IntoFuture {}
 /// High level interface for executing commands against a DeltaTable
 pub struct DeltaOps(pub DeltaTable);
 
+/// Configuration for random exponential backoff
+pub struct RetryConfig {
+    /// Seed for random retry interval
+    /// It is multiplied to random value btw 0 and 1 to calculate the retry interval
+    random_seed: u64,
+    /// backoff factor which is multiplied to the interval, every time a retry is performed
+    backoff_factor: u64,
+}
+
+impl RetryConfig {
+    /// Create a new RetryConfig
+    pub fn new(random_seed: u64, backoff_factor: u64) -> Self {
+        RetryConfig {
+            random_seed,
+            backoff_factor,
+        }
+    }
+
+    /// default RetryConfig
+    pub fn default() -> Self {
+        RetryConfig {
+            random_seed: 1,
+            backoff_factor: 2,
+        }
+    }
+}
+
+/// Retry mode for write conflicts
+pub enum RetryMode {
+    /// Retry immediately
+    Immediate,
+    /// Retry with random, exponential backoff
+    RandomExponential(RetryConfig),
+}
+
+/// Represents the metrics of a commit
+/// Measuring the number of cloud storage accesses and the latency of the commit
+pub struct CommitMetrics {
+    /// The number of cloud storage accesses made during the commit
+    pub cloud_storage_access_cnt: usize,
+    /// The time taken to commit
+    pub commit_duration: std::time::Duration,
+}
+
+pub async fn attempt_write_with_retry() {
+    // TODO
+}
+
 impl DeltaOps {
     /// Create a new [`DeltaOps`] instance, operating on [`DeltaTable`] at given uri.
     ///
