@@ -3,7 +3,7 @@
 //!
 //! [`CommitProperties`] provides an unified client interface for all Delta opeartions.
 //! Internally this is used to initialize a [`CommitBuilder`].
-//!  
+//!
 //! For advanced use cases [`CommitBuilder`] can be used which allows
 //! finer control over the commit process. The builder can be converted
 //! into a future the yield either a [`PreparedCommit`] or a [`FinalizedCommit`].
@@ -14,64 +14,64 @@
 //!
 //!<pre>
 //!                                          Client Interface
-//!        ┌─────────────────────────────┐                    
-//!        │      Commit Properties      │                    
-//!        │                             │                    
-//!        │ Public commit interface for │                    
-//!        │     all Delta Operations    │                    
-//!        │                             │                    
-//!        └─────────────┬───────────────┘                    
-//!                      │                                    
+//!        ┌─────────────────────────────┐
+//!        │      Commit Properties      │
+//!        │                             │
+//!        │ Public commit interface for │
+//!        │     all Delta Operations    │
+//!        │                             │
+//!        └─────────────┬───────────────┘
+//!                      │
 //! ─────────────────────┼────────────────────────────────────
-//!                      │                                    
+//!                      │
 //!                      ▼                  Advanced Interface
-//!        ┌─────────────────────────────┐                    
-//!        │       Commit Builder        │                    
-//!        │                             │                    
-//!        │   Advanced entry point for  │                    
-//!        │     creating a commit       │                    
-//!        └─────────────┬───────────────┘                    
-//!                      │                                    
-//!                      ▼                                    
-//!     ┌───────────────────────────────────┐                 
-//!     │                                   │                 
-//!     │ ┌───────────────────────────────┐ │                 
-//!     │ │        Prepared Commit        │ │                 
-//!     │ │                               │ │                 
-//!     │ │     Represents a temporary    │ │                 
-//!     │ │   commit marker written to    │ │                 
-//!     │ │           storage             │ │                 
-//!     │ └──────────────┬────────────────┘ │                 
-//!     │                │                  │                 
-//!     │                ▼                  │                 
-//!     │ ┌───────────────────────────────┐ │                 
-//!     │ │       Finalize Commit         │ │                 
-//!     │ │                               │ │                 
-//!     │ │   Convert the commit marker   │ │                 
-//!     │ │   to a commit using atomic    │ │                 
-//!     │ │         operations            │ │                 
-//!     │ │                               │ │                 
-//!     │ └───────────────────────────────┘ │                 
-//!     │                                   │                 
-//!     └────────────────┬──────────────────┘                 
-//!                      │                                    
-//!                      ▼                                    
-//!       ┌───────────────────────────────┐                   
-//!       │          Post Commit          │                   
-//!       │                               │                   
-//!       │ Commit that was materialized  │                   
-//!       │ to storage with post commit   │                   
-//!       │      hooks to be executed     │                   
-//!       └──────────────┬────────────────┘                 
-//!                      │                                    
-//!                      ▼    
-//!       ┌───────────────────────────────┐                   
-//!       │        Finalized Commit       │                   
-//!       │                               │                   
-//!       │ Commit that was materialized  │                   
-//!       │         to storage            │                   
-//!       │                               │                   
-//!       └───────────────────────────────┘           
+//!        ┌─────────────────────────────┐
+//!        │       Commit Builder        │
+//!        │                             │
+//!        │   Advanced entry point for  │
+//!        │     creating a commit       │
+//!        └─────────────┬───────────────┘
+//!                      │
+//!                      ▼
+//!     ┌───────────────────────────────────┐
+//!     │                                   │
+//!     │ ┌───────────────────────────────┐ │
+//!     │ │        Prepared Commit        │ │
+//!     │ │                               │ │
+//!     │ │     Represents a temporary    │ │
+//!     │ │   commit marker written to    │ │
+//!     │ │           storage             │ │
+//!     │ └──────────────┬────────────────┘ │
+//!     │                │                  │
+//!     │                ▼                  │
+//!     │ ┌───────────────────────────────┐ │
+//!     │ │       Finalize Commit         │ │
+//!     │ │                               │ │
+//!     │ │   Convert the commit marker   │ │
+//!     │ │   to a commit using atomic    │ │
+//!     │ │         operations            │ │
+//!     │ │                               │ │
+//!     │ └───────────────────────────────┘ │
+//!     │                                   │
+//!     └────────────────┬──────────────────┘
+//!                      │
+//!                      ▼
+//!       ┌───────────────────────────────┐
+//!       │          Post Commit          │
+//!       │                               │
+//!       │ Commit that was materialized  │
+//!       │ to storage with post commit   │
+//!       │      hooks to be executed     │
+//!       └──────────────┬────────────────┘
+//!                      │
+//!                      ▼
+//!       ┌───────────────────────────────┐
+//!       │        Finalized Commit       │
+//!       │                               │
+//!       │ Commit that was materialized  │
+//!       │         to storage            │
+//!       │                               │
+//!       └───────────────────────────────┘
 //!</pre>
 use std::collections::HashMap;
 
@@ -381,7 +381,6 @@ impl CommitProperties {
 impl From<CommitProperties> for CommitBuilder {
     fn from(value: CommitProperties) -> Self {
         CommitBuilder {
-            max_retries: value.max_retries,
             app_metadata: value.app_metadata,
             post_commit_hook: Some(PostCommitHookProperties {
                 create_checkpoint: value.create_checkpoint,
@@ -398,7 +397,6 @@ pub struct CommitBuilder {
     actions: Vec<Action>,
     app_metadata: HashMap<String, Value>,
     app_transaction: Vec<Transaction>,
-    max_retries: usize,
     post_commit_hook: Option<PostCommitHookProperties>,
 }
 
@@ -408,7 +406,6 @@ impl Default for CommitBuilder {
             actions: Vec::new(),
             app_metadata: HashMap::new(),
             app_transaction: Vec::new(),
-            max_retries: DEFAULT_RETRIES,
             post_commit_hook: None,
         }
     }
@@ -424,12 +421,6 @@ impl<'a> CommitBuilder {
     /// Metadata for the operation performed like metrics, user, and notebook
     pub fn with_app_metadata(mut self, app_metadata: HashMap<String, Value>) -> Self {
         self.app_metadata = app_metadata;
-        self
-    }
-
-    /// Maximum number of times to retry the transaction before failing to commit
-    pub fn with_max_retries(mut self, max_retries: usize) -> Self {
-        self.max_retries = max_retries;
         self
     }
 
@@ -455,7 +446,6 @@ impl<'a> CommitBuilder {
         PreCommit {
             log_store,
             table_data,
-            max_retries: self.max_retries,
             data,
             post_commit_hook: self.post_commit_hook,
         }
@@ -467,7 +457,6 @@ pub struct PreCommit<'a> {
     log_store: LogStoreRef,
     table_data: Option<&'a dyn TableReference>,
     data: CommitData,
-    max_retries: usize,
     post_commit_hook: Option<PostCommitHookProperties>,
 }
 
@@ -515,7 +504,6 @@ impl<'a> PreCommit<'a> {
                 commit_or_bytes,
                 log_store: this.log_store,
                 table_data: this.table_data,
-                max_retries: this.max_retries,
                 data: this.data,
                 post_commit: this.post_commit_hook,
             })
@@ -529,7 +517,6 @@ pub struct PreparedCommit<'a> {
     log_store: LogStoreRef,
     data: CommitData,
     table_data: Option<&'a dyn TableReference>,
-    max_retries: usize,
     post_commit: Option<PostCommitHookProperties>,
 }
 
@@ -568,70 +555,35 @@ impl<'a> std::future::IntoFuture for PreparedCommit<'a> {
             // TODO: refactor to only depend on TableReference Trait
             let read_snapshot = this.table_data.unwrap().eager_snapshot();
 
-            let mut attempt_number = 1;
-            while attempt_number <= this.max_retries {
-                let version = read_snapshot.version() + attempt_number as i64;
-                match this
-                    .log_store
-                    .write_commit_entry(version, commit_or_bytes.clone())
-                    .await
-                {
-                    Ok(()) => {
-                        return Ok(PostCommit {
-                            version,
-                            data: this.data,
-                            create_checkpoint: this
-                                .post_commit
-                                .map(|v| v.create_checkpoint)
-                                .unwrap_or_default(),
-                            cleanup_expired_logs: this
-                                .post_commit
-                                .map(|v| v.cleanup_expired_logs)
-                                .unwrap_or_default(),
-                            log_store: this.log_store,
-                            table_data: this.table_data,
-                        });
-                    }
-                    Err(TransactionError::VersionAlreadyExists(version)) => {
-                        let summary = WinningCommitSummary::try_new(
-                            this.log_store.as_ref(),
-                            version - 1,
-                            version,
-                        )
+            let version = read_snapshot.version();
+            match this
+                .log_store
+                .write_commit_entry(version, commit_or_bytes.clone())
+                .await
+            {
+                Ok(()) => {
+                    return Ok(PostCommit {
+                        version,
+                        data: this.data,
+                        create_checkpoint: this
+                            .post_commit
+                            .map(|v| v.create_checkpoint)
+                            .unwrap_or_default(),
+                        cleanup_expired_logs: this
+                            .post_commit
+                            .map(|v| v.cleanup_expired_logs)
+                            .unwrap_or_default(),
+                        log_store: this.log_store,
+                        table_data: this.table_data,
+                    });
+                }
+                Err(err) => {
+                    this.log_store
+                        .abort_commit_entry(version, commit_or_bytes)
                         .await?;
-                        let transaction_info = TransactionInfo::try_new(
-                            read_snapshot,
-                            this.data.operation.read_predicate(),
-                            &this.data.actions,
-                            this.data.operation.read_whole_table(),
-                        )?;
-                        let conflict_checker = ConflictChecker::new(
-                            transaction_info,
-                            summary,
-                            Some(&this.data.operation),
-                        );
-                        match conflict_checker.check_conflicts() {
-                            Ok(_) => {
-                                attempt_number += 1;
-                            }
-                            Err(err) => {
-                                this.log_store
-                                    .abort_commit_entry(version, commit_or_bytes)
-                                    .await?;
-                                return Err(TransactionError::CommitConflict(err).into());
-                            }
-                        };
-                    }
-                    Err(err) => {
-                        this.log_store
-                            .abort_commit_entry(version, commit_or_bytes)
-                            .await?;
-                        return Err(err.into());
-                    }
+                    return Err(err.into());
                 }
             }
-
-            Err(TransactionError::MaxCommitAttempts(this.max_retries as i32).into())
         })
     }
 }
