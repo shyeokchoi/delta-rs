@@ -19,7 +19,7 @@ use crate::kernel::{
     Transaction,
 };
 use crate::logstore::{self, extract_version_from_filename, LogStoreConfig, LogStoreRef};
-use crate::operations::{CloudStorageAccessCountMap, LIST_OBJECTS};
+use crate::operations::LIST_OBJECTS;
 use crate::partitions::PartitionFilter;
 use crate::storage::{commit_uri_from_version, ObjectStoreRef};
 use crate::{DeltaResult, DeltaTableError};

@@ -7,10 +7,9 @@
 //! with a [data stream][datafusion::physical_plan::SendableRecordBatchStream],
 //! if the operation returns data as well.
 use rand::Rng;
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell};
 use std::collections::HashMap;
 use std::future::IntoFuture;
-use std::rc::Rc;
 use tokio::task_local;
 
 use add_feature::AddTableFeatureBuilder;
@@ -118,12 +117,17 @@ pub enum RetryMode {
 /// Types of cloud storage access
 #[derive(Hash, Eq, PartialEq)]
 pub enum CloudStorageAccessType {
+    /// Cloud Storage object list API
     ListObjects,
+    /// Cloud Storage download object API
     ReadObject,
 }
 
+/// Result of a commit
 pub enum CommitResult {
+    /// Success with metrics
     Success(SucceessCommitMetrics),
+    /// Failure with metrics
     Fail(FailedCommitMetrics),
 }
 
@@ -184,11 +188,13 @@ fn get_random_exponential_backoff_interval_in_millis(
     return rand::thread_rng().gen_range(0..max_backoff);
 }
 
+/// A map to deliver the result of Cloud Storage access count
 pub struct CloudStorageAccessCountMap {
     inner: HashMap<CloudStorageAccessType, usize>,
 }
 
 impl CloudStorageAccessCountMap {
+    /// Create a new CloudStorageAccessCountMap
     pub fn new() -> Self {
         Self {
             inner: HashMap::new(),
@@ -212,16 +218,20 @@ impl CloudStorageAccessCountMap {
         *count += increment
     }
 
+    /// get the count of the access type
     pub fn get(&self, access_type: CloudStorageAccessType) -> usize {
         *self.inner.get(&access_type).unwrap_or(&0)
     }
 }
 
 task_local! {
+    /// Count the number of Cloud Storage List Objects API access
 pub static LIST_OBJECTS: Cell<usize>;
+    /// Count the number of Cloud Storage Download Object API access
 pub static READ_OBJECT: Cell<usize>;
 }
 
+/// attempt to write with retry (immediate OR random exponential backoff)
 pub async fn attempt_write_with_retry(
     table_url: &str,
     batches: impl IntoIterator<Item = RecordBatch> + Clone,

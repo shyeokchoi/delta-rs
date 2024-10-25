@@ -1,9 +1,7 @@
 //! Create or load DeltaTables
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use chrono::{DateTime, FixedOffset, Utc};
@@ -15,7 +13,6 @@ use url::Url;
 use super::DeltaTable;
 use crate::errors::{DeltaResult, DeltaTableError};
 use crate::logstore::LogStoreRef;
-use crate::operations::CloudStorageAccessCountMap;
 use crate::storage::{factories, IORuntime, StorageOptions};
 
 #[allow(dead_code)]

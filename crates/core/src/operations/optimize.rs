@@ -812,7 +812,6 @@ impl MergePlan {
 
                 CommitBuilder::from(properties)
                     .with_actions(actions)
-                    .with_max_retries(DEFAULT_RETRIES + commits_made)
                     .build(
                         Some(snapshot),
                         log_store.clone(),

@@ -77,13 +77,11 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use chrono::Utc;
-use conflict_checker::ConflictChecker;
 use futures::future::BoxFuture;
 use object_store::path::Path;
 use object_store::Error as ObjectStoreError;
 use serde_json::Value;
 
-use self::conflict_checker::{TransactionInfo, WinningCommitSummary};
 use crate::checkpoints::{cleanup_expired_logs_for, create_checkpoint_for};
 use crate::errors::DeltaTableError;
 use crate::kernel::{
