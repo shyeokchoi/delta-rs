@@ -124,8 +124,6 @@ pub enum CommitResult {
     Fail(FailedCommitMetrics),
 }
 
-type CloudStorageAccessCountMap = HashMap<CloudStorageAccessType, u32>;
-
 /// Represents the metrics of a successful commit
 pub struct SucceessCommitMetrics {
     /// The number of retries made during the commit
@@ -183,11 +181,23 @@ fn get_random_exponential_backoff_interval_in_millis(
     return rand::thread_rng().gen_range(0..max_backoff);
 }
 
-fn new_access_count_map() -> CloudStorageAccessCountMap {
-    let mut map = HashMap::new();
-    map.insert(CloudStorageAccessType::ListObjects, 0);
-    map.insert(CloudStorageAccessType::ReadObject, 0);
-    map
+pub struct CloudStorageAccessCountMap {
+    inner: HashMap<CloudStorageAccessType, u32>,
+}
+
+impl CloudStorageAccessCountMap {
+    pub fn new() -> Self {
+        Self { inner: HashMap::new() }
+    }
+
+    fn increment(&mut self, access_type: CloudStorageAccessType, increment: u32) {
+        let count = self.inner.entry(access_type).or_insert(0);
+        *count += increment;
+    }
+
+    pub fn get(&self, access_type: CloudStorageAccessType) -> u32 {
+        *self.inner.get(&access_type).unwrap_or(&0)
+    }
 }
 
 pub async fn attempt_write_with_retry(
@@ -199,13 +209,14 @@ pub async fn attempt_write_with_retry(
 ) -> DeltaResult<CommitResult> {
     let start = std::time::Instant::now();
     // TODO: implement incrementing access count for each cloud storage access
-    let mut access_count_map = new_access_count_map();
+    let mut access_count_map = CloudStorageAccessCountMap::new();
 
     for retry_cnt in 0..= max_retry {
         // open table stored in the Cloud Storage
         // this will read the `_delta_log` directory and construct the state of the table
         // will send request to the Cloud Storage
         let table = open_table(table_url).await?;
+        access_count_map.increment(CloudStorageAccessType::ListObjects, 1);
 
         // try writing
         let write_res = DeltaOps(table)
