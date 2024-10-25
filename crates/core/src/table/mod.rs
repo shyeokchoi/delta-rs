@@ -19,6 +19,7 @@ use crate::kernel::{
     Transaction,
 };
 use crate::logstore::{self, extract_version_from_filename, LogStoreConfig, LogStoreRef};
+use crate::operations::{CloudStorageAccessCountMap, LIST_OBJECTS};
 use crate::partitions::PartitionFilter;
 use crate::storage::{commit_uri_from_version, ObjectStoreRef};
 use crate::{DeltaResult, DeltaTableError};
@@ -529,6 +530,9 @@ impl DeltaTable {
         let prefix = Some(log_store.log_path());
         let offset_path = commit_uri_from_version(min_version);
         let object_store = log_store.object_store();
+
+        // list _delta_logs
+        LIST_OBJECTS.with(|cnt| cnt.set(cnt.get() + 1));
         let mut files = object_store.list_with_offset(prefix, &offset_path);
 
         while let Some(obj_meta) = files.next().await {

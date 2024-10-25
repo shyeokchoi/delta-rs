@@ -20,6 +20,7 @@ use super::parse;
 use crate::kernel::{arrow::json, ActionType, Metadata, Protocol, Schema, StructType};
 use crate::logstore::LogStore;
 use crate::operations::transaction::CommitData;
+use crate::operations::{LIST_OBJECTS, READ_OBJECT};
 use crate::{DeltaResult, DeltaTableConfig, DeltaTableError};
 
 const LAST_CHECKPOINT_FILE_NAME: &str = "_last_checkpoint";
@@ -92,6 +93,9 @@ impl LogSegment {
     ) -> DeltaResult<Self> {
         let log_url = table_root.child("_delta_log");
         let maybe_cp = read_last_checkpoint(store, &log_url).await?;
+
+        // list log files
+        LIST_OBJECTS.with(|cnt| cnt.set(cnt.get() + 1));
 
         // List relevant files from log
         let (mut commit_files, checkpoint_files) = match (maybe_cp, version) {
@@ -238,6 +242,9 @@ impl LogSegment {
         read_schema: &Schema,
         config: &DeltaTableConfig,
     ) -> DeltaResult<BoxStream<'_, DeltaResult<RecordBatch>>> {
+        // read log files
+        READ_OBJECT.with(|cnt| cnt.set(cnt.get() + self.commit_files.len()));
+
         let decoder = json::get_decoder(Arc::new(read_schema.try_into()?), config)?;
         let stream = futures::stream::iter(self.commit_files.iter())
             .map(move |meta| {
@@ -423,6 +430,8 @@ async fn read_last_checkpoint(
     let file_path = log_root.child(LAST_CHECKPOINT_FILE_NAME);
     match fs_client.get(&file_path).await {
         Ok(data) => {
+            // read _last_checkpoint
+            READ_OBJECT.with(|cnt: &std::cell::Cell<usize>| cnt.set(cnt.get() + 1));
             let data = data.bytes().await?;
             Ok(Some(serde_json::from_slice(&data)?))
         }

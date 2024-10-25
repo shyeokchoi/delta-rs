@@ -6,9 +6,12 @@
 //! the operations' behaviors and will return an updated table potentially in conjunction
 //! with a [data stream][datafusion::physical_plan::SendableRecordBatchStream],
 //! if the operation returns data as well.
+use rand::Rng;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::future::IntoFuture;
-use rand::Rng;
+use std::rc::Rc;
+use tokio::task_local;
 
 use add_feature::AddTableFeatureBuilder;
 #[cfg(feature = "datafusion")]
@@ -30,10 +33,10 @@ use self::{
     merge::MergeBuilder, update::UpdateBuilder, write::WriteBuilder,
 };
 use crate::errors::{DeltaResult, DeltaTableError};
-use crate::table::builder::DeltaTableBuilder;
-use crate::DeltaTable;
 use crate::open_table;
 use crate::protocol::SaveMode;
+use crate::table::builder::DeltaTableBuilder;
+use crate::DeltaTable;
 
 pub mod add_column;
 pub mod add_feature;
@@ -174,7 +177,7 @@ impl FailedCommitMetrics {
 /// Unit: millis
 fn get_random_exponential_backoff_interval_in_millis(
     random_seed: u64,
-    base: u64, /* the base of exponential backoff */
+    base: u64,     /* the base of exponential backoff */
     exponent: u32, /* the exponent of exponential backoff */
 ) -> u64 {
     let max_backoff = random_seed * base.pow(exponent);
@@ -182,22 +185,41 @@ fn get_random_exponential_backoff_interval_in_millis(
 }
 
 pub struct CloudStorageAccessCountMap {
-    inner: HashMap<CloudStorageAccessType, u32>,
+    inner: HashMap<CloudStorageAccessType, usize>,
 }
 
 impl CloudStorageAccessCountMap {
     pub fn new() -> Self {
-        Self { inner: HashMap::new() }
+        Self {
+            inner: HashMap::new(),
+        }
     }
 
-    fn increment(&mut self, access_type: CloudStorageAccessType, increment: u32) {
+    fn finalize(mut self) -> Self {
+        self.increment(
+            CloudStorageAccessType::ListObjects,
+            LIST_OBJECTS.with(|cnt| cnt.get()),
+        );
+        self.increment(
+            CloudStorageAccessType::ReadObject,
+            READ_OBJECT.with(|cnt| cnt.get()),
+        );
+        self
+    }
+
+    fn increment(&mut self, access_type: CloudStorageAccessType, increment: usize) {
         let count = self.inner.entry(access_type).or_insert(0);
-        *count += increment;
+        *count += increment
     }
 
-    pub fn get(&self, access_type: CloudStorageAccessType) -> u32 {
+    pub fn get(&self, access_type: CloudStorageAccessType) -> usize {
         *self.inner.get(&access_type).unwrap_or(&0)
     }
+}
+
+task_local! {
+pub static LIST_OBJECTS: Cell<usize>;
+pub static READ_OBJECT: Cell<usize>;
 }
 
 pub async fn attempt_write_with_retry(
@@ -207,16 +229,15 @@ pub async fn attempt_write_with_retry(
     retry_mode: RetryMode,
     max_retry: u32,
 ) -> DeltaResult<CommitResult> {
-    let start = std::time::Instant::now();
-    // TODO: implement incrementing access count for each cloud storage access
-    let mut access_count_map = CloudStorageAccessCountMap::new();
+    LIST_OBJECTS.with(|cnt| cnt.set(0));
+    READ_OBJECT.with(|cnt| cnt.set(0));
 
-    for retry_cnt in 0..= max_retry {
+    let start = std::time::Instant::now();
+
+    for retry_cnt in 0..=max_retry {
         // open table stored in the Cloud Storage
         // this will read the `_delta_log` directory and construct the state of the table
-        // will send request to the Cloud Storage
         let table = open_table(table_url).await?;
-        access_count_map.increment(CloudStorageAccessType::ListObjects, 1);
 
         // try writing
         let write_res = DeltaOps(table)
@@ -234,7 +255,7 @@ pub async fn attempt_write_with_retry(
                 return Ok(CommitResult::Success(SucceessCommitMetrics::new(
                     retry_cnt,
                     start.elapsed(),
-                    access_count_map,
+                    CloudStorageAccessCountMap::new().finalize(),
                 )));
             }
             Err(DeltaTableError::VersionAlreadyExists(_)) => {
@@ -258,7 +279,7 @@ pub async fn attempt_write_with_retry(
 
     Ok(CommitResult::Fail(FailedCommitMetrics::new(
         start.elapsed(),
-        access_count_map,
+        CloudStorageAccessCountMap::new().finalize(),
     )))
 }
 
