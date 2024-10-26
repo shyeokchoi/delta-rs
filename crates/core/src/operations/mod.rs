@@ -76,24 +76,24 @@ pub(crate) trait Operation<State>: std::future::IntoFuture {}
 /// High level interface for executing commands against a DeltaTable
 pub struct DeltaOps(pub DeltaTable);
 
-static DEFAULT_RANDOM_SEED: u64 = 100;
+static DEFAULT_SCALING_FACTOR: u64 = 100;
 
 /// Configuration for random exponential backoff
 #[derive(Clone)]
 pub struct RetryConfig {
-    /// Seed for random retry interval
+    /// Scaling factor for random retry interval
     /// It is multipled to (backoff_factor)^(retry count) to get the max interval
-    /// default: DEFAULT_RANDOM_SEED
-    random_seed: u64,
+    /// default: DEFAULT_SCALING_FACTOR
+    scaling_factor: u64,
     /// backoff factor which is multiplied to the interval, every time a retry is performed
     backoff_factor: u64,
 }
 
 impl RetryConfig {
     /// Create a new RetryConfig
-    pub fn new(random_seed: u64, backoff_factor: u64) -> Self {
+    pub fn new(scaling_factor: u64, backoff_factor: u64) -> Self {
         RetryConfig {
-            random_seed,
+            scaling_factor,
             backoff_factor,
         }
     }
@@ -101,7 +101,7 @@ impl RetryConfig {
     /// default RetryConfig
     pub fn default() -> Self {
         RetryConfig {
-            random_seed: DEFAULT_RANDOM_SEED,
+            scaling_factor: DEFAULT_SCALING_FACTOR,
             backoff_factor: 2,
         }
     }
@@ -182,11 +182,11 @@ impl FailedCommitMetrics {
 /// Calculate the interval for random exponential backoff
 /// Unit: millis
 fn get_random_exponential_backoff_interval_in_millis(
-    random_seed: u64,
+    scaling_factor: u64,
     base: u64,     /* the base of exponential backoff */
     exponent: u32, /* the exponent of exponential backoff */
 ) -> u64 {
-    let max_backoff = random_seed * base.pow(exponent);
+    let max_backoff = scaling_factor * base.pow(exponent);
     return rand::thread_rng().gen_range(0..max_backoff);
 }
 
@@ -285,7 +285,7 @@ pub async fn attempt_write_with_retry(
                 // random exponential backoff or immediate retry (based on retry_mode)
                 if let RetryMode::RandomExponential(config) = &retry_mode {
                     let interval = get_random_exponential_backoff_interval_in_millis(
-                        config.random_seed,
+                        config.scaling_factor,
                         config.backoff_factor,
                         retry_cnt,
                     );
