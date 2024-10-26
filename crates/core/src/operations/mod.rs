@@ -84,9 +84,9 @@ pub struct RetryConfig {
     /// Scaling factor for random retry interval
     /// It is multipled to (backoff_factor)^(retry count) to get the max interval
     /// default: DEFAULT_SCALING_FACTOR
-    scaling_factor: u64,
+    pub scaling_factor: u64,
     /// backoff factor which is multiplied to the interval, every time a retry is performed
-    backoff_factor: u64,
+    pub backoff_factor: u64,
 }
 
 impl RetryConfig {
