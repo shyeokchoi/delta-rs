@@ -79,6 +79,7 @@ pub struct DeltaOps(pub DeltaTable);
 static DEFAULT_RANDOM_SEED: u64 = 100;
 
 /// Configuration for random exponential backoff
+#[derive(Clone)]
 pub struct RetryConfig {
     /// Seed for random retry interval
     /// It is multipled to (backoff_factor)^(retry count) to get the max interval
@@ -107,6 +108,7 @@ impl RetryConfig {
 }
 
 /// Retry mode for write conflicts
+#[derive(Clone)]
 pub enum RetryMode {
     /// Retry immediately
     Immediate,
