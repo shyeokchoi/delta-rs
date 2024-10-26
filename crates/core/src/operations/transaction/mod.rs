@@ -553,7 +553,7 @@ impl<'a> std::future::IntoFuture for PreparedCommit<'a> {
             // TODO: refactor to only depend on TableReference Trait
             let read_snapshot = this.table_data.unwrap().eager_snapshot();
 
-            let version = read_snapshot.version();
+            let version = read_snapshot.version() + 1;
             match this
                 .log_store
                 .write_commit_entry(version, commit_or_bytes.clone())
