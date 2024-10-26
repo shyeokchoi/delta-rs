@@ -221,8 +221,18 @@ impl CloudStorageAccessCountMap {
     }
 
     /// get the count of the access type
-    pub fn get(&self, access_type: CloudStorageAccessType) -> usize {
+    fn get(&self, access_type: CloudStorageAccessType) -> usize {
         *self.inner.get(&access_type).unwrap_or(&0)
+    }
+
+    /// get the count of the ListObjects API access
+    pub fn get_list_objects_count(&self) -> usize {
+        self.get(CloudStorageAccessType::ListObjects)
+    }
+
+    /// get the count of the ReadObject API access
+    pub fn get_read_object_count(&self) -> usize {
+        self.get(CloudStorageAccessType::ReadObject)
     }
 }
 
