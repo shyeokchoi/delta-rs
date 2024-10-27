@@ -7,7 +7,7 @@
 //! with a [data stream][datafusion::physical_plan::SendableRecordBatchStream],
 //! if the operation returns data as well.
 use rand::Rng;
-use std::cell::{Cell};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::future::IntoFuture;
 use tokio::task_local;
@@ -77,6 +77,7 @@ pub(crate) trait Operation<State>: std::future::IntoFuture {}
 pub struct DeltaOps(pub DeltaTable);
 
 static DEFAULT_SCALING_FACTOR: u64 = 100;
+static SECOND_IN_MILLIS: u64 = 1000;
 
 /// Configuration for random exponential backoff
 #[derive(Clone)]
@@ -289,7 +290,11 @@ pub async fn attempt_write_with_retry(
                         config.backoff_factor,
                         retry_cnt,
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(interval)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(std::cmp::min(
+                        interval,
+                        SECOND_IN_MILLIS,
+                    )))
+                    .await;
                 }
             }
             Err(err) => {
