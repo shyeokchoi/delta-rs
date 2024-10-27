@@ -188,7 +188,8 @@ fn get_random_exponential_backoff_interval_in_millis(
     exponent: u32, /* the exponent of exponential backoff */
 ) -> u64 {
     let max_backoff = scaling_factor * base.pow(exponent);
-    return rand::thread_rng().gen_range(0..max_backoff);
+    let capped_backoff = std::cmp::min(max_backoff, SECOND_IN_MILLIS);
+    return rand::thread_rng().gen_range(0..capped_backoff);
 }
 
 /// A map to deliver the result of Cloud Storage access count
@@ -285,16 +286,14 @@ pub async fn attempt_write_with_retry(
                 // write conflict!
                 // random exponential backoff or immediate retry (based on retry_mode)
                 if let RetryMode::RandomExponential(config) = &retry_mode {
-                    let interval = get_random_exponential_backoff_interval_in_millis(
-                        config.scaling_factor,
-                        config.backoff_factor,
-                        retry_cnt,
-                    );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(std::cmp::min(
-                        interval,
-                        SECOND_IN_MILLIS,
-                    )))
-                    .await;
+                    if retry_cnt < max_retry {
+                        let interval = get_random_exponential_backoff_interval_in_millis(
+                            config.scaling_factor,
+                            config.backoff_factor,
+                            retry_cnt,
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_millis(interval)).await;
+                    }
                 }
             }
             Err(err) => {
